@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -18,20 +19,30 @@ logger = logging.getLogger("jarvis.main")
 
 class JarvisRuntime:
     def __init__(self) -> None:
-        self.memory = MemoryStore(db_path="data/jarvis.db")
-        self.voice_output = VoiceOutputService(piper_binary="piper", voice_model="models/en_US-lessac-medium.onnx")
-        self.brain = BrainService(model="mistral", ollama_base_url="http://localhost:11434")
+        self.memory = MemoryStore(db_path=os.getenv("JARVIS_DB_PATH", "data/jarvis.db"))
+        self.voice_output = VoiceOutputService(
+            piper_binary=os.getenv("PIPER_BIN", "piper"),
+            voice_model=os.getenv("PIPER_MODEL", "models/en_US-lessac-medium.onnx"),
+        )
+        self.brain = BrainService(
+            model=os.getenv("OLLAMA_MODEL", "mistral"),
+            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        )
         self.router = CommandRouter()
-        self.voice_input = VoiceInputService(model_size="base", wake_word="jarvis")
+        self.voice_input = VoiceInputService(model_size=os.getenv("WHISPER_MODEL", "base"), wake_word="jarvis")
         self.task: asyncio.Task | None = None
         self.running = False
+        self.voice_disabled = os.getenv("JARVIS_DISABLE_VOICE", "false").lower() == "true"
 
     async def startup(self) -> None:
         logger.info("Starting Jarvis runtime")
         await self.memory.initialize()
         await self.router.initialize()
         self.running = True
-        self.task = asyncio.create_task(self.background_voice_loop())
+        if not self.voice_disabled:
+            self.task = asyncio.create_task(self.background_voice_loop())
+        else:
+            logger.info("Voice loop disabled by JARVIS_DISABLE_VOICE=true")
 
     async def shutdown(self) -> None:
         logger.info("Shutting down Jarvis runtime")
@@ -52,7 +63,8 @@ class JarvisRuntime:
             result = await self.router.dispatch(llm_result)
             final_text = result.get("message") or llm_result.get("say") or "Done."
             await self.memory.save_message(role="assistant", content=final_text)
-            await self.voice_output.speak(final_text)
+            if not self.voice_disabled:
+                await self.voice_output.speak(final_text)
             return final_text
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to process text: %s", exc)

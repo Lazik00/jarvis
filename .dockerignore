@@ -1,0 +1,10 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+node_modules
+jarvis-ui/node_modules
+jarvis-ui/dist
