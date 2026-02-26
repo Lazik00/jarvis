@@ -1,0 +1,134 @@
+name: jarvis-local
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    networks:
+      - jarvis-net
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    volumes:
+      - models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    restart: "no"
+    networks:
+      - jarvis-net
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - models:/root/.ollama
+      - ./ollama-init.sh:/ollama-init.sh:ro
+    entrypoint: ["/bin/sh", "/ollama-init.sh"]
+
+  piper-tts:
+    image: rhasspy/wyoming-piper:latest
+    restart: unless-stopped
+    networks:
+      - jarvis-net
+    command: ["--voice", "${PIPER_VOICE:-en_US-lessac-medium}", "--data-dir", "/data"]
+    volumes:
+      - models:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 10200 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    restart: unless-stopped
+    profiles: ["chroma"]
+    networks:
+      - jarvis-net
+    volumes:
+      - memory_db:/chroma/chroma
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/v1/heartbeat >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  jarvis-backend:
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    restart: unless-stopped
+    networks:
+      - jarvis-net
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${JARVIS_MODEL:-mistral}
+      - JARVIS_DISABLE_VOICE=${JARVIS_DISABLE_VOICE:-true}
+      - JARVIS_DB_PATH=${JARVIS_DB_PATH:-/app/data/jarvis.db}
+      - CHROMA_HOST=${CHROMA_HOST:-chromadb}
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+      piper-tts:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - memory_db:/app/data
+      - models:/app/models
+      - logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host_proc:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  jarvis-ui:
+    build:
+      context: ..
+      dockerfile: docker/ui.Dockerfile
+    restart: unless-stopped
+    networks:
+      - jarvis-net
+    environment:
+      - VITE_JARVIS_WS_URL=${BACKEND_WS:-ws://jarvis-backend:8000/ws}
+    depends_on:
+      jarvis-backend:
+        condition: service_healthy
+    ports:
+      - "5173:5173"
+    volumes:
+      - logs:/var/log/jarvis
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+networks:
+  jarvis-net:
+    driver: bridge
+    internal: false
+
+volumes:
+  models:
+  memory_db:
+  logs:

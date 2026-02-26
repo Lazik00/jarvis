@@ -1,0 +1,49 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command: "sleep 5 && ollama pull mistral"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+
+  jarvis-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: jarvis-backend
+    depends_on:
+      - ollama
+      - ollama-pull
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=mistral
+      - JARVIS_DISABLE_VOICE=true
+      - JARVIS_DB_PATH=data/jarvis.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  jarvis-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: jarvis-ui
+    depends_on:
+      - jarvis-backend
+    ports:
+      - "8080:80"
+
+volumes:
+  ollama_data:
