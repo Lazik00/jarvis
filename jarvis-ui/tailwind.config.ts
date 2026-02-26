@@ -8,7 +8,12 @@ export default {
         bg: '#07090f',
         panel: 'rgba(17, 24, 39, 0.55)',
         neon: '#27b6ff',
-        purple: '#9b6dff',
+        purple: {
+          DEFAULT: '#9b6dff',
+          100: '#e0d1ff',
+          400: '#af8aff',
+          500: '#9b6dff',
+        },
         success: '#37e6a4',
       },
       boxShadow: {

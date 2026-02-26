@@ -12,7 +12,18 @@ export type JarvisEvent =
   | { type: 'processing'; text: string }
   | { type: 'error'; message: string };
 
-const SOCKET_URL = import.meta.env.VITE_JARVIS_WS_URL ?? 'ws://127.0.0.1:8000/ws';
+const getSocketUrl = () => {
+  const envUrl = import.meta.env.VITE_JARVIS_WS_URL;
+  if (envUrl) return envUrl;
+
+  const { protocol, hostname } = window.location;
+  const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
+  // If we are running in a container, hostname might be localhost or a specific IP/domain
+  // We assume the backend is on the same host but port 8000
+  return `${wsProtocol}//${hostname}:8000/ws`;
+};
+
+const SOCKET_URL = getSocketUrl();
 
 export const useSocket = () => {
   const wsRef = useRef<WebSocket | null>(null);

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { JarvisEvent, useSocket } from './useSocket';
 
 export type JarvisStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -19,13 +19,7 @@ export const useJarvisState = () => {
   const [stats, setStats] = useState({ cpu: 0, ram: 0, docker: 'unknown' });
   const [containers, setContainers] = useState<Array<{ name: string; status: string }>>([]);
 
-  useMemo(() => {
-    const latest = socket.events[socket.events.length - 1];
-    if (!latest) return;
-    processEvent(latest);
-  }, [socket.events]);
-
-  const processEvent = (event: JarvisEvent) => {
+  function processEvent(event: JarvisEvent) {
     switch (event.type) {
       case 'jarvis_listening':
         setStatus('listening');
@@ -57,7 +51,14 @@ export const useJarvisState = () => {
       default:
         break;
     }
-  };
+  }
+
+  useEffect(() => {
+    const latest = socket.events[socket.events.length - 1];
+    if (latest) {
+      processEvent(latest);
+    }
+  }, [socket.events]);
 
   const sendUserMessage = (text: string) => {
     if (!text.trim()) return;
